@@ -20,11 +20,21 @@ def pyNetz(coordinates, cutoff = 2 * maximum_distance, tetrahedral_angle = 5/6*n
     - tetrahedral_angle: float
         Maximum angle between adjacent triangle normals.
     - flip_initial_triangle: bool
-        Flip all triangles to reverse the initial normal orientation.
+        Reverse the initial triangle orientation.
 
     Returns:
     - valid_triangles: np.ndarray
         Array of triangles (each row contains three vertex indices).
+    - valid_edges: np.ndarray
+        Array of all edges below the cutoff.
+    - valid_edge_lengths: np.ndarray
+        Lengths corresponding to valid_edges.
+    - normal_vectors: np.ndarray
+        Normal vectors of all triangles.
+    - adjacent_triangles: list
+        Indices of adjacent triangles for each triangle.
+    - boundary_edges: np.ndarray
+        Edges belonging to exactly one triangle.
     """
 
     # # # Initialization # # #
@@ -36,10 +46,16 @@ def pyNetz(coordinates, cutoff = 2 * maximum_distance, tetrahedral_angle = 5/6*n
 
     edge_i, edge_j = np.triu_indices(n, 1)
     valid = distances < cutoff
+
+    valid_edge_lengths = distances[valid]
     valid_edges = np.column_stack((edge_i[valid], edge_j[valid]))
 
+    empty_triangles = np.empty((0, 3), dtype=int)
+    empty_edges = np.empty((0, 2), dtype=int)
+    empty_normals = np.empty((0, 3))
+
     if len(valid_edges) == 0:
-        return np.empty((0, 3), dtype=int)
+        return empty_triangles, empty_edges, np.empty(0), empty_normals, [], empty_edges.copy()
 
     adjacency = np.zeros((n, n), dtype=bool)
     adjacency[valid_edges[:, 0], valid_edges[:, 1]] = True
@@ -47,23 +63,23 @@ def pyNetz(coordinates, cutoff = 2 * maximum_distance, tetrahedral_angle = 5/6*n
 
     edge_count = np.zeros((n, n), dtype=np.uint8)
     edge_triangle = np.full((n, n), -1, dtype=int)
+    edge_triangle_neighbor = np.full((n, n), -1, dtype=int)
 
     # # # Initial Triangle # # #
 
-    initial_edge = valid_edges[np.argmin(distances[valid])]
-    a, b = initial_edge
+    a, b = valid_edges[np.argmin(valid_edge_lengths)]
 
     candidates = np.flatnonzero(adjacency[a] & adjacency[b])
 
     if len(candidates) == 0:
-        return np.empty((0, 3), dtype=int)
+        return empty_triangles, valid_edges, valid_edge_lengths, empty_normals, [], empty_edges.copy()
 
     perimeters = distance_matrix[a, b] + distance_matrix[a, candidates] + distance_matrix[b, candidates]
     c = candidates[np.argmin(perimeters)]
 
     triangles = [[a, b, c]]
 
-    for u, v, opposite in ((a, b, c), (b, c, a), (c, a, b)):
+    for u, v in ((a, b), (b, c), (c, a)):
         u, v = min(u, v), max(u, v)
         edge_count[u, v] = edge_count[v, u] = 1
         edge_triangle[u, v] = edge_triangle[v, u] = 0
@@ -82,7 +98,8 @@ def pyNetz(coordinates, cutoff = 2 * maximum_distance, tetrahedral_angle = 5/6*n
         if edge_count[a, b] != 1:
             continue
 
-        avoid_vertex = sum(triangles[edge_triangle[a, b]]) - a - b
+        adjacent_triangle = triangles[edge_triangle[a, b]]
+        avoid_vertex = sum(adjacent_triangle) - a - b
 
         candidates = np.flatnonzero(adjacency[a] & adjacency[b])
         candidates = candidates[
@@ -122,7 +139,6 @@ def pyNetz(coordinates, cutoff = 2 * maximum_distance, tetrahedral_angle = 5/6*n
         vertex = candidates[np.argmin(perimeters)]
 
         # orient the new triangle consistently with its neighbor
-        adjacent_triangle = triangles[edge_triangle[a, b]]
         same_direction = any(
             adjacent_triangle[k] == a and adjacent_triangle[(k + 1) % 3] == b
             for k in range(3)
@@ -131,9 +147,9 @@ def pyNetz(coordinates, cutoff = 2 * maximum_distance, tetrahedral_angle = 5/6*n
         triangle = [b, a, vertex] if same_direction else [a, b, vertex]
         triangles.append(triangle)
 
-        # update the boundary
         new_index = len(triangles) - 1
 
+        # update edge information and boundary
         for u, v in ((triangle[0], triangle[1]), (triangle[1], triangle[2]), (triangle[2], triangle[0])):
             u, v = min(u, v), max(u, v)
 
@@ -141,10 +157,10 @@ def pyNetz(coordinates, cutoff = 2 * maximum_distance, tetrahedral_angle = 5/6*n
                 edge_count[u, v] = edge_count[v, u] = 1
                 edge_triangle[u, v] = edge_triangle[v, u] = new_index
                 boundary.append((u, v))
-            else:
+
+            elif edge_count[u, v] == 1:
                 edge_count[u, v] = edge_count[v, u] = 2
-                
-        # print(idx)
+                edge_triangle_neighbor[u, v] = edge_triangle_neighbor[v, u] = new_index
 
     # # # Final Orientation # # #
 
@@ -153,4 +169,25 @@ def pyNetz(coordinates, cutoff = 2 * maximum_distance, tetrahedral_angle = 5/6*n
     if flip_initial_triangle:
         valid_triangles[:, [1, 2]] = valid_triangles[:, [2, 1]]
 
-    return valid_triangles
+    # calculate normal vectors
+    v1 = coordinates[valid_triangles[:, 1]] - coordinates[valid_triangles[:, 0]]
+    v2 = coordinates[valid_triangles[:, 2]] - coordinates[valid_triangles[:, 0]]
+    normal_vectors = np.cross(v1, v2)
+
+    # find adjacent triangles
+    adjacent_triangles = [[] for _ in valid_triangles]
+
+    for u, v in np.argwhere(np.triu(edge_count == 2, 1)):
+        triangle_1 = edge_triangle[u, v]
+        triangle_2 = edge_triangle_neighbor[u, v]
+
+        adjacent_triangles[triangle_1].append(triangle_2)
+        adjacent_triangles[triangle_2].append(triangle_1)
+
+    adjacent_triangles = [np.asarray(t, dtype=int) for t in adjacent_triangles]
+
+    # find boundary edges
+    boundary_edges = np.argwhere(np.triu(edge_count == 1, 1))
+
+    return valid_triangles, valid_edges, valid_edge_lengths, normal_vectors, adjacent_triangles, boundary_edges
+
