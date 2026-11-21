@@ -9,7 +9,7 @@ Just supply an unordered 3D point cloud, and the code will generate:
 * **`valid_triangles`**: Triangulated faces
 * **`valid_edges`**: All edges shorter than the cutoff
 * **`valid_edge_lengths`**: Lengths corresponding to `valid_edges`
-* **`normal_vectors`**: Normal vector of each triangle, in the same order as `valid_triangles`
+* **`normal_vectors`**: (Non-unit / unnormalized) Normal vector of each triangle, in the same order as `valid_triangles`
 * **`adjacent_triangles`**: Indices of neighboring triangles for each triangle
 * **`boundary_edges`**: Edges belonging to exactly one triangle in the resulting mesh
 
