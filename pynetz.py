@@ -8,7 +8,7 @@ surface_area = 4 * np.pi
 maximum_distance = np.sqrt(2 * surface_area / (np.sqrt(3) * number_of_points))
 
 
-def brute_force_triangulator_improved(coordinates, cutoff = 2 * maximum_distance, tetrahedral_angle = 5/6*np.pi, flip_initial_triangle = True):
+def pyNetz(coordinates, cutoff = 2 * maximum_distance, tetrahedral_angle = 5/6*np.pi, flip_initial_triangle = True):
     """
     Triangulate a point cloud using an advancing-front approach.
 
