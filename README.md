@@ -13,4 +13,6 @@ Just supply an unordered 3D point cloud, and the code will generate:
 * **`adjacent_triangles`**: Indices of neighboring triangles for each triangle
 * **`boundary_edges`**: Edges belonging to exactly one triangle in the resulting mesh
 
+You must provide a maximum distance to define the neighborhood boundary for each point, along with a tetrahedral angle to limit how sharply triangles can fold into one another.
+
 Because it uses a greedy, brute-force algorithm, it may occasionally discard points that violate the geometric constraints, meaning the number of unique points in the final mesh can be smaller than the original input, `len(unique_triangle_points) != len(original_points)`.
